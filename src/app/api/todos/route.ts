@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/mongodb';
+import { getDatabase, testConnection } from '@/lib/mongodb';
 
 export interface Todo {
   _id?: string;
@@ -14,6 +14,17 @@ export interface Todo {
 
 export async function GET() {
   try {
+    console.log('🔍 GET /api/todos - Fetching todos...');
+    
+    // Test connection first
+    const isConnected = await testConnection();
+    if (!isConnected) {
+      return NextResponse.json(
+        { error: 'Database connection failed' },
+        { status: 500 }
+      );
+    }
+
     const db = await getDatabase();
     const collection = db.collection('todos');
 
@@ -21,6 +32,8 @@ export async function GET() {
       .find({})
       .sort({ createdAt: -1 })
       .toArray();
+    
+    console.log(`✅ Found ${todos.length} todos`);
     
     // Convert ObjectId to string
     const formattedTodos = todos.map(todo => ({
@@ -30,9 +43,12 @@ export async function GET() {
 
     return NextResponse.json(formattedTodos);
   } catch (error) {
-    console.error('Error fetching todos:', error);
+    console.error('❌ Error fetching todos:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch todos' },
+      { 
+        error: 'Failed to fetch todos',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
@@ -40,18 +56,31 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const db = await getDatabase();
-    const collection = db.collection('todos');
+    console.log('📝 POST /api/todos - Creating new todo...');
+    
+    // Test connection first
+    const isConnected = await testConnection();
+    if (!isConnected) {
+      return NextResponse.json(
+        { error: 'Database connection failed' },
+        { status: 500 }
+      );
+    }
     
     const todoData = await request.json();
+    console.log('📄 Todo data received:', todoData);
     
     // Validate required fields
     if (!todoData.title || !todoData.dueDate) {
+      console.log('❌ Validation failed: missing required fields');
       return NextResponse.json(
         { error: 'Title and due date are required' },
         { status: 400 }
       );
     }
+
+    const db = await getDatabase();
+    const collection = db.collection('todos');
 
     // Add timestamps
     const newTodo = {
@@ -60,12 +89,15 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString()
     };
 
+    console.log('💾 Inserting todo into database...');
     const result = await collection.insertOne(newTodo);
+    console.log('✅ Todo inserted with ID:', result.insertedId);
     
     // Fetch the created todo to return it
     const createdTodo = await collection.findOne({ _id: result.insertedId });
     
     if (!createdTodo) {
+      console.log('❌ Failed to retrieve created todo');
       return NextResponse.json(
         { error: 'Failed to create todo' },
         { status: 500 }
@@ -77,11 +109,15 @@ export async function POST(request: NextRequest) {
       _id: createdTodo._id.toString()
     };
 
+    console.log('🎉 Todo created successfully:', formattedTodo._id);
     return NextResponse.json(formattedTodo, { status: 201 });
   } catch (error) {
-    console.error('Error creating todo:', error);
+    console.error('❌ Error creating todo:', error);
     return NextResponse.json(
-      { error: 'Failed to create todo' },
+      { 
+        error: 'Failed to create todo',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

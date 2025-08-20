@@ -4,14 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Check, X, Calendar, Clock, Filter, Search, CalendarDays } from 'lucide-react';
 
 interface Todo {
-  _id?: string;
+  _id: string;
   title: string;
   description: string;
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
   dueDate: string;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 type DateFilter = 'all' | 'today' | 'week' | 'month' | 'custom';
@@ -27,7 +27,7 @@ const TodoApp: React.FC = () => {
   const [customDateTo, setCustomDateTo] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [formData, setFormData] = useState<Todo>({
+  const [formData, setFormData] = useState<Omit<Todo, '_id' | 'createdAt' | 'updatedAt'>>({
     title: '',
     description: '',
     completed: false,
@@ -35,46 +35,34 @@ const TodoApp: React.FC = () => {
     dueDate: new Date().toISOString().split('T')[0]
   });
 
-  // API configuration
-  const API_BASE = '/api/todos';
-
-  useEffect(() => {
-    fetchTodos();
-  }, []);
-
-  const fetchTodos = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(API_BASE);
-      if (!response.ok) {
-        throw new Error('Failed to fetch todos');
-      }
-      const data = await response.json();
-      setTodos(data);
-    } catch (error) {
-      console.error('Error fetching todos:', error);
-      // Show user-friendly error message
-      alert('Gagal memuat data. Silakan coba lagi.');
-    } finally {
-      setIsLoading(false);
-    }
+  // Generate unique ID
+  const generateId = () => {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
   };
 
-  const createTodo = async (todo: Omit<Todo, '_id'>) => {
+  // Load todos from memory state (simulating persistence)
+  useEffect(() => {
+    setIsLoading(true);
+    // Simulate loading delay
+    const timer = setTimeout(() => {
+      // Initialize with empty array if no todos exist
+      setTodos([]);
+      setIsLoading(false);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const createTodo = async (todo: Omit<Todo, '_id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const response = await fetch(API_BASE, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(todo),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create todo');
-      }
-
-      const newTodo = await response.json();
+      const now = new Date().toISOString();
+      const newTodo: Todo = {
+        ...todo,
+        _id: generateId(),
+        createdAt: now,
+        updatedAt: now
+      };
+      
       setTodos(prev => [newTodo, ...prev]);
       resetForm();
     } catch (error) {
@@ -83,23 +71,11 @@ const TodoApp: React.FC = () => {
     }
   };
 
-  const updateTodo = async (id: string, todo: Partial<Todo>) => {
+  const updateTodo = async (id: string, updates: Partial<Todo>) => {
     try {
-      const response = await fetch(`${API_BASE}/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(todo),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update todo');
-      }
-
-      const updatedTodo = await response.json();
+      const now = new Date().toISOString();
       setTodos(prev => prev.map(t => 
-        t._id === id ? updatedTodo : t
+        t._id === id ? { ...t, ...updates, updatedAt: now } : t
       ));
       resetForm();
     } catch (error) {
@@ -114,14 +90,6 @@ const TodoApp: React.FC = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/${id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete todo');
-      }
-
       setTodos(prev => prev.filter(t => t._id !== id));
     } catch (error) {
       console.error('Error deleting todo:', error);
@@ -149,7 +117,7 @@ const TodoApp: React.FC = () => {
     if (!formData.title.trim()) return;
 
     if (editingTodo) {
-      await updateTodo(editingTodo._id!, formData);
+      await updateTodo(editingTodo._id, formData);
     } else {
       await createTodo(formData);
     }
@@ -157,7 +125,13 @@ const TodoApp: React.FC = () => {
 
   const startEdit = (todo: Todo) => {
     setEditingTodo(todo);
-    setFormData({ ...todo });
+    setFormData({
+      title: todo.title,
+      description: todo.description,
+      completed: todo.completed,
+      priority: todo.priority,
+      dueDate: todo.dueDate
+    });
     setShowForm(true);
   };
 
@@ -208,8 +182,6 @@ const TodoApp: React.FC = () => {
     })
     .filter(todo => {
       // Date filter based on createdAt
-      if (!todo.createdAt) return true;
-      
       switch (dateFilter) {
         case 'today':
           return isToday(todo.createdAt);
@@ -262,9 +234,9 @@ const TodoApp: React.FC = () => {
 
   // Get counts for different date filters
   const getDateFilterCounts = () => {
-    const todayCount = todos.filter(todo => todo.createdAt && isToday(todo.createdAt)).length;
-    const weekCount = todos.filter(todo => todo.createdAt && isThisWeek(todo.createdAt)).length;
-    const monthCount = todos.filter(todo => todo.createdAt && isThisMonth(todo.createdAt)).length;
+    const todayCount = todos.filter(todo => isToday(todo.createdAt)).length;
+    const weekCount = todos.filter(todo => isThisWeek(todo.createdAt)).length;
+    const monthCount = todos.filter(todo => isThisMonth(todo.createdAt)).length;
     
     return { todayCount, weekCount, monthCount };
   };
@@ -279,7 +251,7 @@ const TodoApp: React.FC = () => {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
             Daftar Kegiatan
           </h1>
-          <p className="text-gray-600">atur kegiatan harian dengan lebih efiesien</p>
+          <p className="text-gray-600">atur kegiatan harian dengan lebih efisien</p>
         </div>
 
         {/* Stats Cards */}
@@ -580,8 +552,10 @@ const TodoApp: React.FC = () => {
           ) : filteredTodos.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-xl shadow-md border border-gray-100">
               <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No tasks found</p>
-              {(dateFilter !== 'all' || searchTerm || filter !== 'all') && (
+              <p className="text-gray-600">
+                {todos.length === 0 ? 'No tasks yet. Create your first task!' : 'No tasks found'}
+              </p>
+              {(dateFilter !== 'all' || searchTerm || filter !== 'all') && todos.length > 0 && (
                 <p className="text-sm text-gray-500 mt-2">
                   Try adjusting your filters or search terms
                 </p>
@@ -598,7 +572,7 @@ const TodoApp: React.FC = () => {
                 <div className="p-6">
                   <div className="flex items-start gap-4">
                     <button
-                      onClick={() => toggleComplete(todo._id!, !todo.completed)}
+                      onClick={() => toggleComplete(todo._id, !todo.completed)}
                       className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
                         todo.completed
                           ? 'bg-green-500 border-green-500 text-white'
@@ -627,7 +601,7 @@ const TodoApp: React.FC = () => {
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
-                            onClick={() => deleteTodo(todo._id!)}
+                            onClick={() => deleteTodo(todo._id)}
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -648,12 +622,10 @@ const TodoApp: React.FC = () => {
                             Due: {formatDate(todo.dueDate)}
                           </span>
                         </div>
-                        {todo.createdAt && (
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-4 w-4" />
-                            <span>Created: {formatDateTime(todo.createdAt)}</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          <span>Created: {formatDateTime(todo.createdAt)}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
