@@ -35,56 +35,8 @@ const TodoApp: React.FC = () => {
     dueDate: new Date().toISOString().split('T')[0]
   });
 
-  // Mock API calls (replace with actual MongoDB API calls)
+  // API configuration
   const API_BASE = '/api/todos';
-
-  const mockTodos: Todo[] = [
-    {
-      _id: '1',
-      title: 'Complete React Project',
-      description: 'Finish the TodoList application with MongoDB integration',
-      completed: false,
-      priority: 'high',
-      dueDate: '2025-08-25',
-      createdAt: '2025-08-20T10:00:00Z'
-    },
-    {
-      _id: '2',
-      title: 'Review Code',
-      description: 'Review the codebase for best practices',
-      completed: true,
-      priority: 'medium',
-      dueDate: '2025-08-22',
-      createdAt: '2025-08-19T09:00:00Z'
-    },
-    {
-      _id: '3',
-      title: 'Update Documentation',
-      description: 'Update API documentation and README file',
-      completed: false,
-      priority: 'low',
-      dueDate: '2025-08-30',
-      createdAt: '2025-08-18T08:00:00Z'
-    },
-    {
-      _id: '4',
-      title: 'Team Meeting',
-      description: 'Weekly team sync meeting',
-      completed: false,
-      priority: 'medium',
-      dueDate: '2025-08-21',
-      createdAt: '2025-08-15T14:00:00Z'
-    },
-    {
-      _id: '5',
-      title: 'Bug Fixes',
-      description: 'Fix critical bugs reported by QA team',
-      completed: true,
-      priority: 'high',
-      dueDate: '2025-08-20',
-      createdAt: '2025-08-10T16:30:00Z'
-    }
-  ];
 
   useEffect(() => {
     fetchTodos();
@@ -93,50 +45,87 @@ const TodoApp: React.FC = () => {
   const fetchTodos = async () => {
     setIsLoading(true);
     try {
-      // Mock API call - replace with actual fetch
-      setTimeout(() => {
-        setTodos(mockTodos);
-        setIsLoading(false);
-      }, 500);
+      const response = await fetch(API_BASE);
+      if (!response.ok) {
+        throw new Error('Failed to fetch todos');
+      }
+      const data = await response.json();
+      setTodos(data);
     } catch (error) {
       console.error('Error fetching todos:', error);
+      // Show user-friendly error message
+      alert('Gagal memuat data. Silakan coba lagi.');
+    } finally {
       setIsLoading(false);
     }
   };
 
   const createTodo = async (todo: Omit<Todo, '_id'>) => {
     try {
-      // Mock API call
-      const newTodo: Todo = {
-        ...todo,
-        _id: Date.now().toString(),
-        createdAt: new Date().toISOString()
-      };
+      const response = await fetch(API_BASE, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(todo),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create todo');
+      }
+
+      const newTodo = await response.json();
       setTodos(prev => [newTodo, ...prev]);
       resetForm();
     } catch (error) {
       console.error('Error creating todo:', error);
+      alert('Gagal membuat task baru. Silakan coba lagi.');
     }
   };
 
   const updateTodo = async (id: string, todo: Partial<Todo>) => {
     try {
+      const response = await fetch(`${API_BASE}/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(todo),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update todo');
+      }
+
+      const updatedTodo = await response.json();
       setTodos(prev => prev.map(t => 
-        t._id === id 
-          ? { ...t, ...todo, updatedAt: new Date().toISOString() }
-          : t
+        t._id === id ? updatedTodo : t
       ));
       resetForm();
     } catch (error) {
       console.error('Error updating todo:', error);
+      alert('Gagal mengupdate task. Silakan coba lagi.');
     }
   };
 
   const deleteTodo = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus task ini?')) {
+      return;
+    }
+
     try {
+      const response = await fetch(`${API_BASE}/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete todo');
+      }
+
       setTodos(prev => prev.filter(t => t._id !== id));
     } catch (error) {
       console.error('Error deleting todo:', error);
+      alert('Gagal menghapus task. Silakan coba lagi.');
     }
   };
 
