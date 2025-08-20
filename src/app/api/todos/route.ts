@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ObjectId } from 'mongodb';
 import { getDatabase } from '@/lib/mongodb';
 
 export interface Todo {
