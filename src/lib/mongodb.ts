@@ -1,71 +1,95 @@
+// lib/mongodb.ts - Fixed MongoDB configuration
 import { MongoClient, Db } from 'mongodb';
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Please add your Mongo URI to .env.local');
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
 }
 
-const uri: string = process.env.MONGODB_URI;
+interface GlobalMongo {
+  client: MongoClient | null;
+  db: Db | null;
+  promise: Promise<MongoClient> | null;
+}
 
-// MongoDB connection options
-const options = {
-  maxPoolSize: 10, // Maintain up to 10 socket connections
-  serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-  socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-  bufferMaxEntries: 0, // Disable mongoose buffering
-  bufferCommands: false, // Disable mongoose buffering
-};
+// Use global variable to maintain connection across hot reloads in development
+declare global {
+  var _mongoClientPromise: GlobalMongo | undefined;
+}
 
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+let cached = global._mongoClientPromise;
 
-if (process.env.NODE_ENV === 'development') {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  const globalWithMongoClientPromise = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
+if (!cached) {
+  cached = global._mongoClientPromise = {
+    client: null,
+    db: null,
+    promise: null
   };
-
-  if (!globalWithMongoClientPromise._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    globalWithMongoClientPromise._mongoClientPromise = client.connect();
-    console.log('🔥 New MongoDB connection created for development');
-  } else {
-    console.log('♻️ Reusing existing MongoDB connection');
-  }
-  clientPromise = globalWithMongoClientPromise._mongoClientPromise;
-} else {
-  // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
-  console.log('🚀 New MongoDB connection created for production');
 }
 
-// Test connection function
-export async function testConnection(): Promise<boolean> {
+async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
+  if (cached!.client && cached!.db) {
+    return { client: cached!.client, db: cached!.db };
+  }
+
+  if (!cached!.promise) {
+    const opts = {
+      // Remove all deprecated options that cause the error
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      // DO NOT include these deprecated options:
+      // bufferMaxEntries, bufferCommands, useNewUrlParser, useUnifiedTopology
+    };
+
+    cached!.promise = MongoClient.connect(MONGODB_URI!, opts);
+  }
+
   try {
-    const client = await clientPromise;
-    await client.db('admin').command({ ping: 1 });
-    console.log('✅ MongoDB connection successful');
-    return true;
+    cached!.client = await cached!.promise;
+    cached!.db = cached!.client.db(process.env.MONGODB_DB_NAME || 'todoapp');
+    
+    console.log('✅ MongoDB connected successfully');
+    return { client: cached!.client, db: cached!.db };
   } catch (error) {
     console.error('❌ MongoDB connection failed:', error);
+    // Reset the cache on connection failure
+    cached!.client = null;
+    cached!.db = null;
+    cached!.promise = null;
+    throw error;
+  }
+}
+
+export async function getDatabase(): Promise<Db> {
+  const { db } = await connectToDatabase();
+  return db;
+}
+
+export async function testConnection(): Promise<boolean> {
+  try {
+    const { client } = await connectToDatabase();
+    // Test the connection
+    await client.db().admin().ping();
+    console.log('✅ Database connection test successful');
+    return true;
+  } catch (error) {
+    console.error('❌ Database connection test failed:', error);
     return false;
   }
 }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
-export default clientPromise;
-
-// Utility function to get database
-export async function getDatabase(): Promise<Db> {
-  try {
-    const client = await clientPromise;
-    const db = client.db('todoapp');
-    console.log('📊 Connected to database: todoapp');
-    return db;
-  } catch (error) {
-    console.error('❌ Failed to connect to database:', error);
-    throw new Error('Database connection failed');
-  }
+// Graceful shutdown
+if (process.env.NODE_ENV === 'production') {
+  process.on('SIGINT', async () => {
+    if (cached?.client) {
+      await cached.client.close();
+      console.log('MongoDB connection closed.');
+    }
+    process.exit(0);
+  });
 }
+
+export default connectToDatabase;
