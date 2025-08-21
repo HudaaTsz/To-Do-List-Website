@@ -35,52 +35,92 @@ const TodoApp: React.FC = () => {
     dueDate: new Date().toISOString().split('T')[0]
   });
 
-  // Generate unique ID
-  const generateId = () => {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  // Load todos from API
+  const fetchTodos = async () => {
+    try {
+      setIsLoading(true);
+      console.log('🔄 Fetching todos from API...');
+      
+      const response = await fetch('/api/todos');
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Todos fetched:', data.length, 'items');
+      setTodos(data);
+    } catch (error) {
+      console.error('❌ Error fetching todos:', error);
+      alert(`Gagal memuat data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Load todos from memory state (simulating persistence)
+  // Load todos on component mount
   useEffect(() => {
-    setIsLoading(true);
-    // Simulate loading delay
-    const timer = setTimeout(() => {
-      // Initialize with empty array if no todos exist
-      setTodos([]);
-      setIsLoading(false);
-    }, 500);
-
-    return () => clearTimeout(timer);
+    fetchTodos();
   }, []);
 
   const createTodo = async (todo: Omit<Todo, '_id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const now = new Date().toISOString();
-      const newTodo: Todo = {
-        ...todo,
-        _id: generateId(),
-        createdAt: now,
-        updatedAt: now
-      };
+      console.log('📝 Creating new todo:', todo);
       
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(todo),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const newTodo = await response.json();
+      console.log('✅ Todo created:', newTodo._id);
+      
+      // Add new todo to state
       setTodos(prev => [newTodo, ...prev]);
       resetForm();
     } catch (error) {
-      console.error('Error creating todo:', error);
-      alert('Gagal membuat task baru. Silakan coba lagi.');
+      console.error('❌ Error creating todo:', error);
+      alert(`Gagal membuat task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const updateTodo = async (id: string, updates: Partial<Todo>) => {
     try {
-      const now = new Date().toISOString();
+      console.log('🔄 Updating todo:', id, updates);
+      
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const updatedTodo = await response.json();
+      console.log('✅ Todo updated:', updatedTodo._id);
+      
+      // Update todo in state
       setTodos(prev => prev.map(t => 
-        t._id === id ? { ...t, ...updates, updatedAt: now } : t
+        t._id === id ? updatedTodo : t
       ));
       resetForm();
     } catch (error) {
-      console.error('Error updating todo:', error);
-      alert('Gagal mengupdate task. Silakan coba lagi.');
+      console.error('❌ Error updating todo:', error);
+      alert(`Gagal mengupdate task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -90,10 +130,24 @@ const TodoApp: React.FC = () => {
     }
 
     try {
+      console.log('🗑️ Deleting todo:', id);
+      
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      console.log('✅ Todo deleted:', id);
+      
+      // Remove todo from state
       setTodos(prev => prev.filter(t => t._id !== id));
     } catch (error) {
-      console.error('Error deleting todo:', error);
-      alert('Gagal menghapus task. Silakan coba lagi.');
+      console.error('❌ Error deleting todo:', error);
+      alert(`Gagal menghapus task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -114,7 +168,10 @@ const TodoApp: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.title.trim()) return;
+    if (!formData.title.trim()) {
+      alert('Title is required!');
+      return;
+    }
 
     if (editingTodo) {
       await updateTodo(editingTodo._id, formData);
@@ -252,6 +309,20 @@ const TodoApp: React.FC = () => {
             Daftar Kegiatan
           </h1>
           <p className="text-gray-600">atur kegiatan harian dengan lebih efisien</p>
+          {/* Connection Status */}
+          <div className="mt-2">
+            {isLoading ? (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                <div className="w-2 h-2 bg-yellow-400 rounded-full mr-2 animate-pulse"></div>
+                Connecting to database...
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                Connected to MongoDB
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -319,7 +390,8 @@ const TodoApp: React.FC = () => {
               <div className="flex gap-4 items-center w-full md:w-auto">
                 <button
                   onClick={() => setShowForm(true)}
-                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                  disabled={isLoading}
+                  className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="h-4 w-4" />
                   Add Task
@@ -433,7 +505,6 @@ const TodoApp: React.FC = () => {
                     value={customDateTo}
                     onChange={(e) => setCustomDateTo(e.target.value)}
                     className="px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                    placeholder="To"
                   />
                   <button
                     onClick={() => {
@@ -525,7 +596,8 @@ const TodoApp: React.FC = () => {
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={handleSubmit}
-                      className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200"
+                      disabled={isLoading}
+                      className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {editingTodo ? 'Update Task' : 'Add Task'}
                     </button>
@@ -547,7 +619,7 @@ const TodoApp: React.FC = () => {
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="text-gray-600 mt-4">Loading tasks...</p>
+              <p className="text-gray-600 mt-4">Loading tasks from database...</p>
             </div>
           ) : filteredTodos.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-xl shadow-md border border-gray-100">
@@ -573,7 +645,8 @@ const TodoApp: React.FC = () => {
                   <div className="flex items-start gap-4">
                     <button
                       onClick={() => toggleComplete(todo._id, !todo.completed)}
-                      className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                      disabled={isLoading}
+                      className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                         todo.completed
                           ? 'bg-green-500 border-green-500 text-white'
                           : 'border-gray-300 hover:border-indigo-500'
@@ -596,13 +669,15 @@ const TodoApp: React.FC = () => {
                           </span>
                           <button
                             onClick={() => startEdit(todo)}
-                            className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            disabled={isLoading}
+                            className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Edit2 className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => deleteTodo(todo._id)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            disabled={isLoading}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
